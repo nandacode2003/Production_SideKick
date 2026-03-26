@@ -29,7 +29,26 @@ Register → OTP Verify → Upload Gov ID (mocked) → Face Scan → Set Interes
 ## 2. SYSTEM ARCHITECTURE
 
 ```
-![WhatsApp Image 2026-03-26 at 1 22 05 PM](https://github.com/user-attachments/assets/de24cd81-62a1-4c38-8c33-33b467d31c53)
+┌─────────────────────────────────────────────────────────┐
+│                     CLIENT (React)                      │
+│   Auth | Dashboard | Match | Chat | Events | Profile    │
+└──────────────────────┬──────────────────────────────────┘
+                       │ REST APIs + Socket.io
+┌──────────────────────▼──────────────────────────────────┐
+│            Node.js / Express Backend (Port 5000)        │
+│   Auth | Users | Matches | Events | Chat | Reports      │
+└───────────┬───────────────────────────┬─────────────────┘
+            │                           │
+            │                           │
+┌───────────▼──────────┐     ┌──────────▼───────────────┐
+│     MongoDB Atlas     │     │   Python Microservice    │
+│-----------------------│     │   (Flask - Port 8000)    │
+│ users                 │     │ - Matching Algorithm     │
+│ matches               │     │ - Face Verification      │
+│ events                │     │ - Score Calculator       │
+│ chats                 │     └──────────────────────────┘
+│ reports               │
+└───────────────────────┘
 
 ```
 

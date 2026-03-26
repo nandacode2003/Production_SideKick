@@ -8,7 +8,6 @@ A smart companion-matching platform for students and young professionals to safe
 
 ## 1. PRODUCT OVERVIEW
 
-### One-Line Pitch
 > SideKick matches verified users with compatible companions nearby for real-world activities — safely, smartly, and instantly.
 
 ### Key Features

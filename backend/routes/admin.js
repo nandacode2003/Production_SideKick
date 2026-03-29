@@ -4,6 +4,15 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { Match, Event, Chat } = require('../models/index');
 
+router.delete('/user/:email', async (req, res) => {
+  if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET)
+    return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await User.deleteOne({ email: req.params.email });
+    res.json({ message: `Deleted user ${req.params.email}` });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/seed', async (req, res) => {
   if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });

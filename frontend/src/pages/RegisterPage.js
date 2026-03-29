@@ -1,6 +1,14 @@
+// src/pages/RegisterPage.js
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { User, Mail, Smartphone, Lock } from 'lucide-react';
+import toast from 'react-hot-toast';
+import AuroraBackground from '../components/ui/AuroraBackground';
+import { AnimatedInput, GradientButton, GradientText } from '../components/ui/UIKit';
 import api from '../utils/api';
+
+const sp = { type: 'spring', stiffness: 300, damping: 28 };
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -12,53 +20,62 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      await api.post('/auth/register', form);
-      navigate('/verify-otp', { state: { phone: form.phone } });
+      const { data } = await api.post('/auth/register', form);
+      toast.success('OTP sent to your email!');
+      navigate('/verify-otp', { state: { userId: data.userId, email: form.email } });
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');
     } finally { setLoading(false); }
   };
 
   const fields = [
-    { key: 'name', label: 'Full Name', type: 'text', placeholder: 'Arjun Sharma' },
-    { key: 'email', label: 'Email', type: 'email', placeholder: 'you@email.com' },
-    { key: 'phone', label: 'Phone', type: 'tel', placeholder: '+91 98765 43210' },
-    { key: 'password', label: 'Password', type: 'password', placeholder: 'Min 8 characters' },
+    { key: 'name',     icon: User,       label: 'Full Name', type: 'text',     placeholder: 'Arjun Sharma' },
+    { key: 'email',    icon: Mail,       label: 'Email',     type: 'email',    placeholder: 'you@email.com' },
+    { key: 'phone',    icon: Smartphone, label: 'Phone',     type: 'tel',      placeholder: '+91 98765 43210' },
+    { key: 'password', icon: Lock,       label: 'Password',  type: 'password', placeholder: 'Min 8 characters' },
   ];
 
   return (
-    <div style={{ minHeight: '100vh', maxWidth: 420, margin: '0 auto', padding: '40px 24px' }}>
-      <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <span style={{ fontSize: 48 }}>🤝</span>
-        <h1 style={{ fontSize: 28, fontWeight: 800, marginTop: 12 }}>Join SideKick</h1>
-        <p style={{ color: 'var(--text-muted)', marginTop: 6 }}>Create your verified profile</p>
+    <div style={{ minHeight: '100vh', background: '#0F0B21', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative' }}>
+      <AuroraBackground intensity="full" />
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 420 }}>
+        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, type: 'spring', stiffness: 200, damping: 22 }}
+          style={{ background: 'rgba(26,21,53,0.75)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(124,58,237,0.15)', borderRadius: 24, padding: window.innerWidth < 768 ? 24 : 36 }}>
+
+          <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300, delay: 0.1 }}
+            style={{ textAlign: 'center', marginBottom: 28 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em' }}>
+              <GradientText gradient="purple-teal">SideKick</GradientText>
+            </h1>
+            <p style={{ color: '#A8A3C7', fontSize: 14, marginTop: 4 }}>Create your account</p>
+          </motion.div>
+
+          {error && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, color: '#F87171', fontSize: 13, fontWeight: 500 }}>
+              {error}
+            </motion.div>
+          )}
+
+          <form onSubmit={handle} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {fields.map(({ key, icon, label, type, placeholder }, i) => (
+              <motion.div key={key} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ ...sp, delay: 0.08 * i + 0.2 }}>
+                <AnimatedInput icon={icon} label={label} type={type} placeholder={placeholder}
+                  value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} required />
+              </motion.div>
+            ))}
+
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>
+              <GradientButton type="submit" loading={loading} fullWidth>Create Account</GradientButton>
+            </motion.div>
+          </form>
+
+          <p style={{ textAlign: 'center', marginTop: 20, color: '#6E6893', fontSize: 14 }}>
+            Already have an account?{' '}
+            <Link to="/login" style={{ color: '#2DD4BF', fontWeight: 700, textDecoration: 'none' }}>Log in</Link>
+          </p>
+        </motion.div>
       </div>
-
-      <form onSubmit={handle} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {error && <div className="badge badge-danger" style={{padding:'10px 16px',borderRadius:10}}>{error}</div>}
-
-        {fields.map(({ key, label, type, placeholder }) => (
-          <div key={key}>
-            <label className="label">{label}</label>
-            <input className="input" type={type} placeholder={placeholder}
-              value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} required />
-          </div>
-        ))}
-
-        <div style={{ marginTop: 8 }}>
-          <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Create Account →'}
-          </button>
-        </div>
-
-        <div style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: 10, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
-          📱 An OTP will be sent to your phone for verification
-        </div>
-
-        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
-          Already have an account? <Link to="/login" style={{ color: 'var(--primary)', fontWeight: 600 }}>Sign In</Link>
-        </p>
-      </form>
     </div>
   );
 }

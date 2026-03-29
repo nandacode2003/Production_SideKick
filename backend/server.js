@@ -5,48 +5,44 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const { initSocket } = require('./utils/socket');
-
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/users');
-const matchRoutes = require('./routes/matches');
-const eventRoutes = require('./routes/events');
-const chatRoutes = require('./routes/chats');
-const reportRoutes = require('./routes/reports');
+const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
 });
 
+app.set('io', io);
 connectDB();
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' }));
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/matches', matchRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/chats', chatRoutes);
-app.use('/api/reports', reportRoutes);
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/profile', require('./routes/profile'));
+app.use('/api/events', require('./routes/events'));
+app.use('/api/matches', require('./routes/matches'));
+app.use('/api/chats', require('./routes/chats'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/safety', require('./routes/safety'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/ratings', require('./routes/ratings'));
+app.use('/api/admin', require('./routes/admin'));
 
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'sidekick-backend' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'sidekick-backend' }));
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: `Route ${req.method} ${req.path} not found` });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.stack);
-  res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
-});
+app.use((req, res) => res.status(404).json({ error: `Route ${req.method} ${req.path} not found` }));
+app.use(errorHandler);
 
 initSocket(io);
 

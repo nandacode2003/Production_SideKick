@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
 const ctrl = require('../controllers/matchController');
+const { protect } = require('../middleware/auth');
 
-router.get('/suggestions', protect, ctrl.getMatches);
-router.get('/active', protect, ctrl.getMyMatches);
+router.get('/suggestions', protect, ctrl.getSuggestions);
 router.get('/pending', protect, ctrl.getPending);
+router.get('/active', protect, ctrl.getActive);
 router.post('/request', protect, ctrl.sendRequest);
-router.put('/respond', protect, ctrl.respondRequest);
+router.post('/:matchId/accept', protect, ctrl.acceptMatch);
+router.post('/:matchId/reject', protect, ctrl.rejectMatch);
 
 module.exports = router;

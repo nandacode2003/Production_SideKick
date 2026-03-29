@@ -1,87 +1,94 @@
-import React, { useState, useRef } from 'react';
+// src/pages/VerifyOtpPage.js
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Mail } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import AuroraBackground from '../components/ui/AuroraBackground';
+import { GradientButton, GradientText } from '../components/ui/UIKit';
+import { OnboardingCard, StepIcon, OTPInput, ProgressBar } from '../components/onboarding/OnboardingKit';
 import api from '../utils/api';
 
 export default function VerifyOtpPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
   const { state } = useLocation();
-  const phone = state?.phone || '';
+  const userId    = state?.userId || '';
+  const email     = state?.email  || '';
 
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const refs = useRef([]);
+  const [otp, setOtp]           = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [countdown, setCountdown] = useState(60);
 
-  const handleChange = (i, val) => {
-    if (!/^\d?$/.test(val)) return;
-    const next = [...otp];
-    next[i] = val;
-    setOtp(next);
-    if (val && i < 5) refs.current[i + 1]?.focus();
-  };
+  useEffect(() => {
+    if (!userId) { navigate('/register'); return; }
+  }, [userId, navigate]);
 
-  const handleKeyDown = (i, e) => {
-    if (e.key === 'Backspace' && !otp[i] && i > 0) refs.current[i - 1]?.focus();
-  };
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   const submit = async () => {
-    const code = otp.join('');
-    if (code.length !== 6) return setError('Enter 6-digit OTP');
+    if (otp.length !== 6) return setError('Enter all 6 digits');
     setLoading(true); setError('');
     try {
-      const { data } = await api.post('/auth/verify-otp', { phone, otp: code });
-      login(data.accessToken, data.user);
+      const { data } = await api.post('/auth/verify-otp', { userId, otp });
+      login(data.token, data.refreshToken, data.user);
+      toast.success('Email verified! 🎉');
       navigate('/verify-id');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid OTP');
-      setOtp(['', '', '', '', '', '']);
-      refs.current[0]?.focus();
+      setOtp('');
     } finally { setLoading(false); }
   };
 
   const resend = async () => {
-    await api.post('/auth/resend-otp', { phone });
-    setError(''); setOtp(['', '', '', '', '', '']);
-    alert('OTP resent!');
+    try {
+      await api.post('/auth/resend-otp', { userId });
+      setCountdown(60); setError(''); setOtp('');
+      toast.success('OTP resent to your email!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
+    }
   };
 
   return (
-    <div style={{ minHeight: '100vh', maxWidth: 400, margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ fontSize: 56, marginBottom: 20 }}>📱</div>
-      <h2 style={{ fontSize: 26, fontWeight: 800 }}>Verify Phone</h2>
-      <p style={{ color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
-        Enter the 6-digit code sent to<br />
-        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{phone}</span>
-      </p>
+    <div style={{ minHeight: '100vh', background: '#0F0B21', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <AuroraBackground intensity="subtle" />
+      <div style={{ position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <ProgressBar currentStep={1} totalSteps={5} />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
+          <OnboardingCard>
+            <StepIcon icon={Mail} />
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F1F0F7', textAlign: 'center', letterSpacing: '-0.02em' }}>Verify your email</h2>
+            <p style={{ fontSize: 14, color: '#A8A3C7', textAlign: 'center', marginTop: 6 }}>
+              Enter the 6-digit code sent to{' '}
+              <span style={{ color: '#F1F0F7', fontWeight: 600 }}>{email}</span>
+            </p>
 
-      <div style={{ display: 'flex', gap: 10, marginTop: 36 }}>
-        {otp.map((d, i) => (
-          <input key={i} ref={el => refs.current[i] = el}
-            value={d} onChange={e => handleChange(i, e.target.value)}
-            onKeyDown={e => handleKeyDown(i, e)}
-            maxLength={1} inputMode="numeric"
-            style={{
-              width: 50, height: 56, textAlign: 'center', fontSize: 24, fontWeight: 700,
-              background: 'var(--bg-card)', border: `2px solid ${d ? 'var(--primary)' : 'var(--border)'}`,
-              borderRadius: 12, color: 'var(--text)', outline: 'none', fontFamily: 'var(--font)',
-            }} />
-        ))}
-      </div>
+            <OTPInput length={6} value={otp} onChange={setOtp} error={error} />
 
-      {error && <p style={{ color: 'var(--danger)', marginTop: 16, fontSize: 14 }}>{error}</p>}
+            {error && (
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                style={{ color: '#F87171', fontSize: 13, textAlign: 'center', marginBottom: 12 }}>{error}</motion.p>
+            )}
 
-      <button className="btn btn-primary" style={{ marginTop: 32, minWidth: 200 }} onClick={submit} disabled={loading}>
-        {loading ? <span className="spinner" /> : 'Verify OTP'}
-      </button>
+            <GradientButton onClick={submit} loading={loading} fullWidth>Verify</GradientButton>
 
-      <button onClick={resend} style={{ marginTop: 16, background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 14, fontWeight: 600 }}>
-        Resend OTP
-      </button>
-
-      <div style={{ marginTop: 32, padding: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
-        💡 In dev mode, check server console for OTP
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <span style={{ fontSize: 14, color: '#6E6893' }}>Didn't receive it? </span>
+              {countdown > 0 ? (
+                <span style={{ fontSize: 14, color: '#4A4570' }}>Resend ({countdown}s)</span>
+              ) : (
+                <button onClick={resend} style={{ background: 'none', border: 'none', color: '#2DD4BF', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Resend</button>
+              )}
+            </div>
+          </OnboardingCard>
+        </div>
       </div>
     </div>
   );

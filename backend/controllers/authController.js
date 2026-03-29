@@ -1,151 +1,177 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { generateTokens } = require('../middleware/auth');
+const { sendOTPEmail, sendWelcomeEmail } = require('../utils/emailService');
 
-// In-memory OTP store (use Redis in production)
-const otpStore = new Map();
+const genOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 const sanitize = (user) => {
   const u = user.toObject ? user.toObject() : { ...user };
-  delete u.passwordHash;
-  delete u.otpCode;
-  delete u.faceDescriptor;
+  delete u.password; delete u.otp; delete u.refreshToken;
   return u;
 };
 
 // ── REGISTER ─────────────────────────────────────────────
-exports.register = async (req, res) => {
+exports.register = async (req, res, next) => {
   try {
     const { name, email, phone, password } = req.body;
-
-    if (!name || !email || !phone || !password) {
+    if (!name || !email || !phone || !password)
       return res.status(400).json({ message: 'All fields are required' });
-    }
-    if (password.length < 8) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters' });
-    }
-    const phoneClean = phone.replace(/\s/g, '');
-    if (!/^\+?[\d]{10,15}$/.test(phoneClean)) {
-      return res.status(400).json({ message: 'Invalid phone number format' });
-    }
+    if (password.length < 6)
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      return res.status(400).json({ message: 'Invalid email format' });
 
-    const existing = await User.findOne({ $or: [{ email }, { phone: phoneClean }] });
-    if (existing) {
-      return res.status(400).json({ message: 'Email or phone already registered' });
-    }
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ message: 'Email already registered' });
 
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, phone: phoneClean, passwordHash });
+    const otp = genOTP();
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    const now = new Date();
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore.set(phoneClean, { otp, expiry: Date.now() + 10 * 60 * 1000 });
-    console.log(`📱 OTP for ${phoneClean}: ${otp}`);
+    const user = await User.create({
+      name, email, phone, password,
+      otp: { code: hashedOtp, expiresAt: new Date(Date.now() + 10 * 60 * 1000), attempts: 0, sentCount: 1, windowStart: now },
+    });
 
-    res.status(201).json({ message: 'Registered. Check server console for OTP.', userId: user._id, phone: phoneClean });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    await sendOTPEmail(email, otp);
+    res.status(201).json({ message: 'OTP sent to email', userId: user._id });
+  } catch (err) { next(err); }
 };
 
 // ── VERIFY OTP ────────────────────────────────────────────
-exports.verifyOtp = async (req, res) => {
+exports.verifyOtp = async (req, res, next) => {
   try {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) {
-      return res.status(400).json({ message: 'Phone and OTP are required' });
-    }
-    const phoneClean = phone.replace(/\s/g, '');
-    const record = otpStore.get(phoneClean);
-    if (!record || record.otp !== otp || Date.now() > record.expiry) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
-    }
-    otpStore.delete(phoneClean);
-    const user = await User.findOneAndUpdate(
-      { phone: phoneClean },
-      { isPhoneVerified: true },
-      { new: true }
-    );
+    const { userId, otp } = req.body;
+    if (!userId || !otp) return res.status(400).json({ message: 'userId and otp are required' });
+
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const { accessToken } = generateTokens(user._id);
-    res.json({ message: 'Phone verified', accessToken, user: sanitize(user) });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    if (user.isEmailVerified) return res.status(400).json({ message: 'Already verified' });
+
+    if (!user.otp?.code) return res.status(400).json({ message: 'No OTP found. Request a new one.' });
+    if (user.otp.attempts >= 5) return res.status(400).json({ message: 'Too many attempts. Request a new OTP.' });
+    if (new Date() > user.otp.expiresAt) return res.status(400).json({ message: 'OTP expired' });
+
+    const match = await bcrypt.compare(otp, user.otp.code);
+    if (!match) {
+      await User.findByIdAndUpdate(userId, { $inc: { 'otp.attempts': 1 } });
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    const { token, refreshToken } = generateTokens(user._id);
+    const updated = await User.findByIdAndUpdate(userId, {
+      isEmailVerified: true,
+      refreshToken,
+      $unset: { otp: '' },
+    }, { new: true });
+
+    await sendWelcomeEmail(user.email, user.name);
+    res.json({ message: 'Email verified', token, refreshToken, user: sanitize(updated) });
+  } catch (err) { next(err); }
 };
 
 // ── RESEND OTP ────────────────────────────────────────────
-exports.resendOtp = async (req, res) => {
+exports.resendOtp = async (req, res, next) => {
   try {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: 'Phone is required' });
-    const phoneClean = phone.replace(/\s/g, '');
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore.set(phoneClean, { otp, expiry: Date.now() + 10 * 60 * 1000 });
-    console.log(`📱 Resent OTP for ${phoneClean}: ${otp}`);
-    res.json({ message: 'OTP resent. Check server console.' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ message: 'userId is required' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.isEmailVerified) return res.status(400).json({ message: 'Already verified' });
+
+    // Rate limit: max 3 per 15 min window
+    const windowStart = user.otp?.windowStart;
+    const withinWindow = windowStart && (Date.now() - new Date(windowStart).getTime()) < 15 * 60 * 1000;
+    if (withinWindow && (user.otp?.sentCount || 0) >= 3) {
+      return res.status(429).json({ message: 'Too many OTP requests. Try again in 15 minutes.' });
+    }
+
+    const otp = genOTP();
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    const now = new Date();
+
+    await User.findByIdAndUpdate(userId, {
+      otp: {
+        code: hashedOtp,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        attempts: 0,
+        sentCount: withinWindow ? (user.otp.sentCount || 0) + 1 : 1,
+        windowStart: withinWindow ? windowStart : now,
+      },
+    });
+
+    await sendOTPEmail(user.email, otp);
+    res.json({ message: 'OTP resent to email' });
+  } catch (err) { next(err); }
 };
 
 // ── LOGIN ─────────────────────────────────────────────────
-exports.login = async (req, res) => {
+exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
-    }
+    if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
+
     const user = await User.findOne({ email });
-    if (!user || !(await user.matchPassword(password))) {
+    if (!user || !(await user.matchPassword(password)))
       return res.status(401).json({ message: 'Invalid email or password' });
-    }
-    if (!user.isPhoneVerified) {
-      return res.status(403).json({ message: 'Phone not verified. Please verify OTP first.' });
-    }
-    const { accessToken } = generateTokens(user._id);
-    res.json({ accessToken, user: sanitize(user) });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+    if (!user.isEmailVerified)
+      return res.status(403).json({ message: 'Email not verified', userId: user._id });
 
-// ── MOCK GOV ID VERIFICATION ──────────────────────────────
-exports.verifyGovId = async (req, res) => {
-  try {
-    const { idType, idNumber } = req.body;
-    if (!idType || !idNumber) {
-      return res.status(400).json({ message: 'idType and idNumber are required' });
-    }
-    // Simulate 95% success (in production: integrate DigiLocker/Aadhaar)
-    const verified = Math.random() > 0.05;
-    if (!verified) {
-      return res.status(400).json({ message: 'ID verification failed. Please try again.' });
-    }
-    await User.findByIdAndUpdate(req.user._id, { isIdVerified: true });
-    res.json({ message: 'Government ID verified ✅', idType });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+    const { token, refreshToken } = generateTokens(user._id);
+    await User.findByIdAndUpdate(user._id, { refreshToken, isOnline: true, lastActive: new Date() });
 
-// ── FACE VERIFICATION ─────────────────────────────────────
-exports.verifyFace = async (req, res) => {
-  try {
-    const { faceDescriptor } = req.body;
-    if (!faceDescriptor) {
-      return res.status(400).json({ message: 'No face data provided' });
-    }
-    await User.findByIdAndUpdate(req.user._id, {
-      isFaceVerified: true,
-      faceDescriptor: faceDescriptor.substring(0, 64),
+    res.json({
+      token, refreshToken,
+      user: { id: user._id, name: user.name, email: user.email, vibe: user.vibe, interests: user.interests, city: user.city, isIdVerified: user.isIdVerified, isFaceVerified: user.isFaceVerified },
     });
-    res.json({ message: 'Face verified ✅' });
+  } catch (err) { next(err); }
+};
+
+// ── REFRESH TOKEN ─────────────────────────────────────────
+exports.refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ message: 'Refresh token required' });
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findOne({ _id: decoded.id, refreshToken });
+    if (!user) return res.status(401).json({ message: 'Invalid refresh token' });
+
+    const { token } = generateTokens(user._id);
+    res.json({ token });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(401).json({ message: 'Invalid or expired refresh token' });
   }
 };
 
-// ── ME ────────────────────────────────────────────────────
-exports.getMe = async (req, res) => {
-  res.json({ user: sanitize(req.user) });
+// ── LOGOUT ────────────────────────────────────────────────
+exports.logout = async (req, res, next) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { refreshToken: null, isOnline: false });
+    res.json({ message: 'Logged out' });
+  } catch (err) { next(err); }
+};
+
+// ── GET ME ────────────────────────────────────────────────
+exports.getMe = (req, res) => res.json({ user: sanitize(req.user) });
+
+// ── VERIFY GOV ID (mock) ──────────────────────────────────
+exports.verifyGovId = async (req, res, next) => {
+  try {
+    await new Promise(r => setTimeout(r, 2000));
+    await User.findByIdAndUpdate(req.user._id, { isIdVerified: true });
+    res.json({ message: 'ID Verified', isIdVerified: true });
+  } catch (err) { next(err); }
+};
+
+// ── VERIFY FACE (mock) ────────────────────────────────────
+exports.verifyFace = async (req, res, next) => {
+  try {
+    await new Promise(r => setTimeout(r, 1000));
+    await User.findByIdAndUpdate(req.user._id, { isFaceVerified: true });
+    res.json({ message: 'Face Verified', isFaceVerified: true });
+  } catch (err) { next(err); }
 };

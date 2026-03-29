@@ -1,10 +1,8 @@
-const { ChatMessage } = require('../models/index');
 const jwt = require('jsonwebtoken');
-
-const connectedUsers = new Map(); // userId -> socketId
+const User = require('../models/User');
+const { Chat } = require('../models/index');
 
 const initSocket = (io) => {
-  // Auth middleware for socket
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error('Unauthorized'));
@@ -17,46 +15,68 @@ const initSocket = (io) => {
     }
   });
 
-  io.on('connection', (socket) => {
-    console.log(`🔌 Socket connected: ${socket.userId}`);
-    connectedUsers.set(socket.userId, socket.id);
+  io.on('connection', async (socket) => {
+    const userId = socket.userId;
+    socket.join(userId);
 
-    // Join a chat room
-    socket.on('join_room', (roomId) => {
-      socket.join(roomId);
-      socket.currentRoom = roomId;
-    });
+    await User.findByIdAndUpdate(userId, { isOnline: true, lastActive: new Date() });
+    console.log(`🔌 Connected: ${userId}`);
 
-    // Send message
-    socket.on('send_message', async ({ roomId, content }) => {
+    socket.on('send-message', async ({ chatId, text }) => {
       try {
-        const msg = await ChatMessage.create({
-          roomId,
-          sender: socket.userId,
-          content
-        });
-        await msg.populate('sender', 'name profilePhoto');
+        if (!text?.trim()) return;
+        const chat = await Chat.findOne({ _id: chatId, participants: userId });
+        if (!chat) return;
 
-        io.to(roomId).emit('new_message', {
-          _id: msg._id,
-          roomId,
-          content,
-          sender: msg.sender,
-          createdAt: msg.createdAt
-        });
+        const message = { sender: userId, text: text.trim(), read: false, createdAt: new Date() };
+        chat.messages.push(message);
+        chat.lastMessage = { text: text.trim(), sender: userId, createdAt: new Date() };
+        await chat.save();
+
+        const saved = chat.messages[chat.messages.length - 1];
+        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
+
+        io.to(otherId).emit('new-message', { chatId, message: saved });
+        io.to(userId).emit('new-message', { chatId, message: saved });
+        io.to(otherId).emit('chat-updated', { chatId, lastMessage: chat.lastMessage });
       } catch (err) {
         socket.emit('error', { message: 'Message failed' });
       }
     });
 
-    // Typing indicator
-    socket.on('typing', ({ roomId, isTyping }) => {
-      socket.to(roomId).emit('user_typing', { userId: socket.userId, isTyping });
+    socket.on('typing', ({ chatId }) => {
+      Chat.findOne({ _id: chatId, participants: userId }).then(chat => {
+        if (!chat) return;
+        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
+        io.to(otherId).emit('user-typing', { chatId, userId });
+      });
     });
 
-    socket.on('disconnect', () => {
-      connectedUsers.delete(socket.userId);
-      console.log(`🔌 Disconnected: ${socket.userId}`);
+    socket.on('stop-typing', ({ chatId }) => {
+      Chat.findOne({ _id: chatId, participants: userId }).then(chat => {
+        if (!chat) return;
+        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
+        io.to(otherId).emit('user-stop-typing', { chatId, userId });
+      });
+    });
+
+    socket.on('mark-read', async ({ chatId }) => {
+      try {
+        const chat = await Chat.findOne({ _id: chatId, participants: userId });
+        if (!chat) return;
+        let updated = false;
+        chat.messages.forEach(m => {
+          if (!m.read && m.sender.toString() !== userId) { m.read = true; updated = true; }
+        });
+        if (updated) await chat.save();
+        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
+        io.to(otherId).emit('messages-read', { chatId });
+      } catch {}
+    });
+
+    socket.on('disconnect', async () => {
+      await User.findByIdAndUpdate(userId, { isOnline: false, lastActive: new Date() });
+      console.log(`🔌 Disconnected: ${userId}`);
     });
   });
 };

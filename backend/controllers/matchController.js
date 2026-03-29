@@ -1,179 +1,140 @@
-const axios = require('axios');
 const User = require('../models/User');
-const { Match } = require('../models/index');
+const { Match, Chat } = require('../models/index');
+const { sendMatchNotificationEmail, sendMatchAcceptedEmail } = require('../utils/emailService');
 
-const PYTHON_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8000';
+function calcScore(me, candidate) {
+  const myInts = new Set(me.interests || []);
+  const cInts = new Set(candidate.interests || []);
+  const common = [...myInts].filter(x => cInts.has(x));
+  const union = new Set([...myInts, ...cInts]).size;
+  const interestScore = union > 0 ? (common.length / union) * 50 : 0;
 
-// ── LOCAL FALLBACK MATCHING ───────────────────────────────
-function localMatch(user, candidates) {
-  return candidates.map(c => {
-    const userInts = new Set(user.interests || []);
-    const candInts = new Set(c.interests || []);
-    const intersection = [...userInts].filter(x => candInts.has(x)).length;
-    const union = new Set([...userInts, ...candInts]).size;
-    const interestScore = union > 0 ? Math.round((intersection / union) * 100) : 0;
-    const safetyScore = Math.min(Math.max(c.safetyScore || 100, 0), 100);
-    const totalScore = Math.round(0.6 * interestScore + 0.4 * safetyScore);
-    return {
-      candidateId: c._id.toString(),
-      totalScore,
-      interestScore,
-      availabilityScore: 50,
-      distanceScore: 50,
-      safetyScore,
-    };
-  });
+  const vibeScore = me.vibe && me.vibe === candidate.vibe ? 15 : 0;
+
+  const myAvail = me.availability || {};
+  const cAvail = candidate.availability || {};
+  const availScore = ['weekdays', 'weekends', 'evenings'].reduce((acc, slot) => {
+    return acc + (myAvail[slot] && cAvail[slot] ? 10 : 0);
+  }, 0);
+
+  const safetyFactor = ((candidate.safetyScore || 100) / 100) * 10;
+  const verifiedBonus = (candidate.isIdVerified ? 5 : 0) + (candidate.isFaceVerified ? 5 : 0);
+
+  return {
+    score: Math.round(interestScore + vibeScore + availScore + safetyFactor + verifiedBonus),
+    matchedInterests: common,
+  };
 }
 
-// ── GET MATCH SUGGESTIONS ─────────────────────────────────
-exports.getMatches = async (req, res) => {
+exports.getSuggestions = async (req, res, next) => {
   try {
-    const me = req.user;
-    if (!me.interests || me.interests.length === 0) {
-      return res.status(400).json({ message: 'Please complete your profile with interests first' });
-    }
+    const me = await User.findById(req.user._id);
 
-    const existingMatches = await Match.find({
-      $or: [{ requester: me._id }, { receiver: me._id }],
-    });
-    const excludeIds = existingMatches.flatMap(m => [
-      m.requester.toString(),
-      m.receiver.toString(),
-    ]);
+    const existingMatches = await Match.find({ users: me._id });
+    const excludeIds = existingMatches.flatMap(m => m.users.map(u => u.toString()));
 
-    const cityFilter = me.location && me.location.city ? { 'location.city': me.location.city } : {};
-
-    const candidates = await User.find({
-      _id: { $ne: me._id, $nin: [...me.blockedUsers, ...excludeIds] },
-      ...cityFilter,
-      isActive: true,
-      isPhoneVerified: true,
-    }).select('name age gender interests availability location vibeTag profilePhoto safetyScore isIdVerified isFaceVerified');
-
-    if (!candidates.length) {
-      return res.json({ matches: [], source: 'no_candidates' });
-    }
-
-    const payload = {
-      user: {
-        id: me._id,
-        interests: me.interests,
-        availability: me.availability,
-        lat: me.location?.lat,
-        lng: me.location?.lng,
-        safetyScore: me.safetyScore,
-      },
-      candidates: candidates.map(c => ({
-        id: c._id,
-        interests: c.interests,
-        availability: c.availability,
-        lat: c.location?.lat,
-        lng: c.location?.lng,
-        safetyScore: c.safetyScore,
-      })),
+    const filter = {
+      _id: { $ne: me._id, $nin: [...(me.blockedUsers || []), ...excludeIds] },
+      isEmailVerified: true,
     };
+    if (me.city) filter.city = me.city;
 
-    let scoredResults;
-    let source = 'python';
-    try {
-      const { data } = await axios.post(`${PYTHON_URL}/match`, payload, { timeout: 5000 });
-      scoredResults = data.results;
-    } catch (pyErr) {
-      console.warn('⚠️  Python service unavailable, using local fallback:', pyErr.message);
-      scoredResults = localMatch(me, candidates);
-      source = 'local_fallback';
-    }
+    const candidates = await User.find(filter)
+      .select('name vibe interests city bio availability safetyScore isIdVerified isFaceVerified isOnline lastActive');
 
-    const scored = scoredResults
-      .filter(r => r.totalScore >= 20)
-      .map(r => {
-        const user = candidates.find(c => c._id.toString() === r.candidateId);
-        return { user, ...r };
+    const scored = candidates
+      .map(c => {
+        const { score, matchedInterests } = calcScore(me, c);
+        return { user: c, compatibilityScore: score, matchedInterests };
       })
-      .filter(r => r.user);
+      .sort((a, b) => b.compatibilityScore - a.compatibilityScore)
+      .slice(0, 10);
 
-    res.json({ matches: scored, source });
-  } catch (err) {
-    console.error('getMatches error:', err.message);
-    res.status(500).json({ message: 'Matching failed. Please try again.' });
-  }
+    res.json(scored);
+  } catch (err) { next(err); }
 };
 
-// ── SEND MATCH REQUEST ────────────────────────────────────
-exports.sendRequest = async (req, res) => {
+exports.sendRequest = async (req, res, next) => {
   try {
-    const { receiverId, eventId } = req.body;
-    if (!receiverId) {
-      return res.status(400).json({ message: 'receiverId is required' });
-    }
-    const existing = await Match.findOne({
-      $or: [
-        { requester: req.user._id, receiver: receiverId },
-        { requester: receiverId, receiver: req.user._id },
-      ],
-    });
-    if (existing) {
-      return res.status(400).json({ message: 'Match request already exists' });
-    }
+    const { targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ message: 'targetUserId is required' });
+    if (targetUserId === req.user._id.toString()) return res.status(400).json({ message: 'Cannot match with yourself' });
+
+    const target = await User.findById(targetUserId);
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    if ((target.blockedUsers || []).includes(req.user._id))
+      return res.status(400).json({ message: 'Cannot send request to this user' });
+
+    const existing = await Match.findOne({ users: { $all: [req.user._id, targetUserId] } });
+    if (existing) return res.status(400).json({ message: 'Match already exists' });
+
+    const me = await User.findById(req.user._id);
+    const { score, matchedInterests } = calcScore(me, target);
+
     const match = await Match.create({
-      requester: req.user._id,
-      receiver: receiverId,
-      event: eventId || null,
-      chatRoomId: `room_${req.user._id}_${receiverId}_${Date.now()}`,
+      users: [req.user._id, targetUserId],
+      initiator: req.user._id,
+      compatibilityScore: score,
+      matchedInterests,
     });
-    res.status(201).json({ match });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+
+    sendMatchNotificationEmail(target.email, me.name, matchedInterests).catch(() => {});
+    res.status(201).json({ message: 'Match request sent', match });
+  } catch (err) { next(err); }
 };
 
-// ── RESPOND TO REQUEST ────────────────────────────────────
-exports.respondRequest = async (req, res) => {
-  try {
-    const { matchId, action } = req.body;
-    if (!matchId || !['accept', 'reject'].includes(action)) {
-      return res.status(400).json({ message: 'matchId and action (accept|reject) required' });
-    }
-    const match = await Match.findOne({
-      _id: matchId,
-      receiver: req.user._id,
-      status: 'pending',
-    });
-    if (!match) {
-      return res.status(404).json({ message: 'Match request not found' });
-    }
-    match.status = action === 'accept' ? 'accepted' : 'rejected';
-    await match.save();
-    res.json({ match });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
-// ── GET MY ACTIVE MATCHES ─────────────────────────────────
-exports.getMyMatches = async (req, res) => {
-  try {
-    const matches = await Match.find({
-      $or: [{ requester: req.user._id }, { receiver: req.user._id }],
-      status: 'accepted',
-    })
-      .populate('requester receiver', 'name profilePhoto vibeTag isIdVerified isFaceVerified')
-      .populate('event', 'title date location');
-    res.json({ matches });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
-// ── GET PENDING REQUESTS ──────────────────────────────────
-exports.getPending = async (req, res) => {
+exports.getPending = async (req, res, next) => {
   try {
     const pending = await Match.find({
-      receiver: req.user._id,
+      users: req.user._id,
+      initiator: { $ne: req.user._id },
       status: 'pending',
-    }).populate('requester', 'name profilePhoto vibeTag interests age');
-    res.json({ pending });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    }).populate('users', 'name vibe interests city bio isIdVerified isFaceVerified');
+    res.json(pending);
+  } catch (err) { next(err); }
+};
+
+exports.getActive = async (req, res, next) => {
+  try {
+    const matches = await Match.find({ users: req.user._id, status: 'accepted' })
+      .populate('users', 'name vibe interests city bio isIdVerified isFaceVerified isOnline lastActive');
+    res.json(matches);
+  } catch (err) { next(err); }
+};
+
+exports.acceptMatch = async (req, res, next) => {
+  try {
+    const match = await Match.findOne({
+      _id: req.params.matchId,
+      users: req.user._id,
+      initiator: { $ne: req.user._id },
+      status: 'pending',
+    });
+    if (!match) return res.status(404).json({ message: 'Match request not found' });
+
+    match.status = 'accepted';
+    await match.save();
+
+    // Auto-create chat room
+    await Chat.create({ match: match._id, participants: match.users, messages: [] });
+
+    // Notify initiator
+    const initiator = await User.findById(match.initiator);
+    const me = await User.findById(req.user._id);
+    if (initiator) sendMatchAcceptedEmail(initiator.email, me.name).catch(() => {});
+
+    res.json({ message: 'Match accepted', match });
+  } catch (err) { next(err); }
+};
+
+exports.rejectMatch = async (req, res, next) => {
+  try {
+    const match = await Match.findOneAndUpdate(
+      { _id: req.params.matchId, users: req.user._id, status: 'pending' },
+      { status: 'rejected' },
+      { new: true }
+    );
+    if (!match) return res.status(404).json({ message: 'Match not found' });
+    res.json({ message: 'Match rejected' });
+  } catch (err) { next(err); }
 };

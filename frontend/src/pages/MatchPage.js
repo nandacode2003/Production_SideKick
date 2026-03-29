@@ -1,7 +1,81 @@
+// src/pages/MatchPage.js
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Layout from '../components/common/Layout';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, SlidersHorizontal, MapPin, CheckCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import AppLayout from '../layouts/AppLayout';
+import { EmptyState, SkeletonList, Avatar, PageHeader } from '../components/ui/UIKit';
+import { useTilt } from '../hooks/useTilt';
 import api from '../utils/api';
+
+const sp = { type: 'spring', stiffness: 300, damping: 28 };
+
+const ScoreBar = ({ label, value, color }) => (
+  <div style={{ marginBottom: 8 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#6E6893', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color }}>{Math.round(value)}%</span>
+    </div>
+    <div style={{ height: 4, background: '#2D2653', borderRadius: 2, overflow: 'hidden' }}>
+      <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(value, 100)}%` }}
+        transition={{ duration: 0.9, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.2 }}
+        style={{ height: '100%', background: color, borderRadius: 2 }} />
+    </div>
+  </div>
+);
+
+function MatchCard({ user, totalScore, interestScore, availabilityScore, distanceScore, sent, onSend, delay }) {
+  const { ref, onMouseMove, onMouseLeave } = useTilt(1.5);
+  const matchColor = totalScore >= 80 ? '#7C3AED' : totalScore >= 60 ? '#FBBF24' : '#4A4570';
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ ...sp, delay }}
+      ref={ref} onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
+      style={{ background: '#1A1535', borderRadius: 20, border: '1px solid #2D2653', boxShadow: '0 4px 16px rgba(0,0,0,0.3)', padding: 20, position: 'relative', overflow: 'hidden', willChange: 'transform' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #7C3AED, #2DD4BF)', borderRadius: '20px 20px 0 0' }} />
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        <Avatar name={user.name} size={52} showRing ringPercent={Math.round(totalScore)} />
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: '#F1F0F7' }}>{user.name}</span>
+              {(user.isIdVerified || user.isFaceVerified) && <CheckCircle size={14} color="#34D399" />}
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 700, color: matchColor }}>{Math.round(totalScore)}%</span>
+          </div>
+          {user.city && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 3 }}>
+              <MapPin size={12} color="#6E6893" />
+              <span style={{ fontSize: 13, color: '#6E6893' }}>{user.city}</span>
+            </div>
+          )}
+          {user.interests?.length > 0 && (
+            <p style={{ fontSize: 13, color: '#A8A3C7', marginTop: 4 }}>{user.interests.slice(0, 4).join(', ')}</p>
+          )}
+        </div>
+      </div>
+      <ScoreBar label="Interests"    value={interestScore    || 0} color="#7C3AED" />
+      <ScoreBar label="Availability" value={availabilityScore || 0} color="#34D399" />
+      <ScoreBar label="Nearby"       value={distanceScore    || 0} color="#F43F5E" />
+      <div style={{ marginTop: 16 }}>
+        <AnimatePresence mode="wait">
+          {sent ? (
+            <motion.div key="sent" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+              style={{ textAlign: 'center', padding: '10px', background: 'rgba(52,211,153,0.1)', borderRadius: 10, color: '#34D399', fontWeight: 600, fontSize: 14, border: '1px solid rgba(52,211,153,0.2)' }}>
+              Request Sent
+            </motion.div>
+          ) : (
+            <motion.button key="send" whileHover={{ scale: 1.02, y: -1 }} whileTap={{ scale: 0.97 }} onClick={onSend}
+              style={{ width: '100%', height: 44, background: 'linear-gradient(135deg, #7C3AED, #2DD4BF)', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif', boxShadow: '0 4px 16px rgba(124,58,237,0.3)' }}>
+              Send Companion Request
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function MatchPage() {
   const [suggestions, setSuggestions] = useState([]);
@@ -12,119 +86,57 @@ export default function MatchPage() {
 
   useEffect(() => {
     api.get('/matches/suggestions')
-      .then(r => setSuggestions(r.data.matches || []))
-      .catch(err => {
-        const msg = err.response?.data?.message;
-        setError(msg || 'Could not load matches.');
-      })
+      .then(r => setSuggestions(r.data || []))
+      .catch(err => setError(err.response?.data?.message || 'Could not load matches.'))
       .finally(() => setLoading(false));
   }, []);
 
   const sendRequest = async (userId) => {
     try {
-      await api.post('/matches/request', { receiverId: userId });
+      await api.post('/matches/request', { targetUserId: userId });
       setSent(s => new Set([...s, userId]));
+      toast.success('Request sent! 🎉');
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to send request');
+      toast.error(err.response?.data?.message || 'Failed to send request');
     }
   };
 
-  const ScoreBar = ({ label, value, color }) => (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-        <span>{label}</span><span>{Math.round(value)}%</span>
-      </div>
-      <div style={{ height: 4, background: 'var(--border)', borderRadius: 2 }}>
-        <div style={{ height: '100%', width: `${Math.min(value, 100)}%`, background: color, borderRadius: 2, transition: 'width 0.6s ease' }} />
-      </div>
-    </div>
-  );
-
   return (
-    <Layout>
-      <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>✨ Your Matches</h2>
-      <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>Sorted by compatibility</p>
+    <AppLayout>
+      <PageHeader title="Matches" subtitle="Sorted by compatibility"
+        rightAction={
+          <button style={{ width: 36, height: 36, borderRadius: 12, background: '#2D2653', border: '1px solid #433B72', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <SlidersHorizontal size={18} color="#A8A3C7" />
+          </button>
+        }
+      />
 
-      {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <div className="spinner" style={{ width: 36, height: 36 }} />
-        </div>
-      )}
+      {loading && <SkeletonList count={3} height={220} />}
 
       {!loading && error && (
-        <div className="card" style={{ textAlign: 'center', padding: 40, borderLeft: '3px solid var(--danger)' }}>
-          <p style={{ color: 'var(--danger)', fontWeight: 600 }}>{error}</p>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ background: '#1A1535', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 16, padding: 20, borderLeft: '3px solid #F87171' }}>
+          <p style={{ color: '#F87171', fontWeight: 600, fontSize: 14 }}>{error}</p>
           {error.includes('profile') && (
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/setup-profile')}>
-              Complete Profile →
-            </button>
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={() => navigate('/setup-profile')}
+              style={{ marginTop: 12, padding: '8px 20px', background: 'linear-gradient(135deg, #7C3AED, #2DD4BF)', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+              Complete Profile
+            </motion.button>
           )}
-        </div>
+        </motion.div>
       )}
 
       {!loading && !error && suggestions.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: 48 }}>
-          <div style={{ fontSize: 56 }}>🔍</div>
-          <p style={{ fontWeight: 700, marginTop: 12 }}>No matches yet</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 6 }}>
-            Make sure your city and interests are set — or run the seed script to add test users
-          </p>
-          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/profile')}>
-            Update Profile
-          </button>
-        </div>
+        <EmptyState icon={Search} title="No matches yet" subtitle="Complete your profile with interests and city to get matched" action="Update Profile" onAction={() => navigate('/profile')} />
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {suggestions.map(({ user, totalScore, interestScore, availabilityScore, distanceScore }) => (
-          <div key={user._id} className="card animate-in">
-            <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
-              <div className="avatar lg" style={{ borderRadius: 16, width: 64, height: 64, fontSize: 26 }}>
-                {user.profilePhoto
-                  ? <img src={user.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 16 }} />
-                  : user.name?.[0]}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 18, fontWeight: 700 }}>{user.name}</span>
-                  {user.isIdVerified && <span className="badge badge-verified">✓ ID</span>}
-                  {user.isFaceVerified && <span className="badge badge-verified">✓ Face</span>}
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-                  {user.age && `${user.age} · `}{user.vibeTag}
-                </p>
-                <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', background: 'rgba(108,99,255,0.15)', borderRadius: 20, padding: '4px 12px' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
-                    {Math.round(totalScore)}% Match
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-              {user.interests?.slice(0, 5).map(i => (
-                <span key={i} className="tag" style={{ fontSize: 12 }}>{i}</span>
-              ))}
-            </div>
-
-            <ScoreBar label="Common Interests" value={interestScore || 0} color="var(--primary)" />
-            <ScoreBar label="Availability Match" value={availabilityScore || 0} color="var(--accent)" />
-            <ScoreBar label="Nearby" value={distanceScore || 0} color="var(--secondary)" />
-
-            <div style={{ marginTop: 16 }}>
-              {sent.has(user._id) ? (
-                <div style={{ textAlign: 'center', padding: '12px', background: 'rgba(67,233,123,0.1)', borderRadius: 10, color: 'var(--accent)', fontWeight: 600 }}>
-                  ✓ Request Sent!
-                </div>
-              ) : (
-                <button className="btn btn-primary btn-full" onClick={() => sendRequest(user._id)}>
-                  👋 Send Companion Request
-                </button>
-              )}
-            </div>
-          </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {suggestions.map(({ user, compatibilityScore, matchedInterests }, i) => (
+          <MatchCard key={user._id} user={user} totalScore={compatibilityScore} interestScore={compatibilityScore}
+            availabilityScore={compatibilityScore * 0.6} distanceScore={80}
+            sent={sent.has(user._id)} onSend={() => sendRequest(user._id)} delay={i * 0.07} />
         ))}
       </div>
-    </Layout>
+    </AppLayout>
   );
 }

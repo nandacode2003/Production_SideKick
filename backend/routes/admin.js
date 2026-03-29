@@ -4,6 +4,18 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { Match, Event, Chat } = require('../models/index');
 
+router.post('/test-email', async (req, res) => {
+  if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET)
+    return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { sendOTPEmail } = require('../utils/emailService');
+    await sendOTPEmail(req.body.email, '123456');
+    res.json({ message: 'Email sent successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 router.get('/users', async (req, res) => {
   if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: 'Unauthorized' });

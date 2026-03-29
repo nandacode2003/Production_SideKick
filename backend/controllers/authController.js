@@ -35,7 +35,7 @@ exports.register = async (req, res, next) => {
       otp: { code: hashedOtp, expiresAt: new Date(Date.now() + 10 * 60 * 1000), attempts: 0, sentCount: 1, windowStart: now },
     });
 
-    sendOTPEmail(email, otp).catch(err => console.error('Email error:', err.message));
+    sendOTPEmail(email, otp).catch(err => console.error('OTP Email error:', err.message));
     res.status(201).json({ message: 'OTP sent to email', userId: user._id });
   } catch (err) { next(err); }
 };

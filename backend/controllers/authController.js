@@ -35,7 +35,7 @@ exports.register = async (req, res, next) => {
       otp: { code: hashedOtp, expiresAt: new Date(Date.now() + 10 * 60 * 1000), attempts: 0, sentCount: 1, windowStart: now },
     });
 
-    await sendOTPEmail(email, otp);
+    sendOTPEmail(email, otp).catch(err => console.error('Email error:', err.message));
     res.status(201).json({ message: 'OTP sent to email', userId: user._id });
   } catch (err) { next(err); }
 };
@@ -67,7 +67,7 @@ exports.verifyOtp = async (req, res, next) => {
       $unset: { otp: '' },
     }, { new: true });
 
-    await sendWelcomeEmail(user.email, user.name);
+    await sendWelcomeEmail(user.email, user.name).catch(err => console.error('Email error:', err.message));
     res.json({ message: 'Email verified', token, refreshToken, user: sanitize(updated) });
   } catch (err) { next(err); }
 };

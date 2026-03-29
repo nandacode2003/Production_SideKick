@@ -46,6 +46,8 @@ export default function DashboardPage() {
   };
 
   const firstName = user?.name?.split(' ')[0] || 'there';
+
+  const ACTIONS = [
     { icon: Sparkles,      title: 'Find Companions',  sub: 'See your matches',           to: '/match'   },
     { icon: Calendar,      title: 'Browse Events',    sub: 'Discover activities nearby', to: '/events'  },
     { icon: MessageCircle, title: 'Messages',         sub: 'Chat with your SideKicks',   to: '/chats'   },

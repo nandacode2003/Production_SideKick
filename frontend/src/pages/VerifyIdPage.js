@@ -30,7 +30,7 @@ export default function VerifyIdPage() {
     if (idNumber.length < 6) return setError('Enter valid ID number');
     setLoading(true); setError('');
     try {
-      await api.post('/profile/verify-id', { idType, idNumber });
+      await api.post('/auth/verify-id', { idType, idNumber });
       updateUser({ isIdVerified: true });
       toast.success('ID verified!');
       setStep('face-scan');
@@ -59,7 +59,7 @@ export default function VerifyIdPage() {
     setScanning(false);
     setLoading(true);
     try {
-      await api.post('/profile/verify-face', { faceDescriptor: descriptor });
+      await api.post('/auth/verify-face', { faceDescriptor: descriptor });
       updateUser({ isFaceVerified: true });
       toast.success('Face verified!');
       navigate('/setup-profile');

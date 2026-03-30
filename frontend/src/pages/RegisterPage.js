@@ -20,9 +20,9 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      const { data } = await api.post('/auth/register', form);
-      toast.success('OTP sent to your email!');
-      navigate('/verify-otp', { state: { userId: data.userId, email: form.email } });
+      await api.post('/auth/register', form);
+      toast.success('Account created!');
+      navigate('/verify-otp', { state: { phone: form.phone } });
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');
     } finally { setLoading(false); }

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, LogOut, ChevronRight, Edit2, Clock, Shield, Bell, Eye, HelpCircle } from 'lucide-react';
+import { MapPin, LogOut, ChevronRight, Edit2, Clock, Shield, Bell, Eye, HelpCircle, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppLayout from '../layouts/AppLayout';
 import { Badge, GradientText } from '../components/ui/UIKit';
@@ -32,7 +32,7 @@ export default function ProfilePage() {
   const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ bio: user?.bio || '', city: user?.city || '', interests: user?.interests || [], vibeTag: user?.vibe || '' });
+  const [form, setForm] = useState({ bio: user?.bio || '', city: user?.location?.city || '', interests: user?.interests || [], vibeTag: user?.vibeTag || '' });
   const [saving, setSaving] = useState(false);
 
   const toggleInterest = (i) => setForm(f => ({ ...f, interests: f.interests.includes(i) ? f.interests.filter(x => x !== i) : [...f.interests, i] }));
@@ -40,25 +40,24 @@ export default function ProfilePage() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.put('/profile/update', { bio: form.bio, city: form.city });
-      if (form.interests.length >= 3) await api.put('/profile/interests', { interests: form.interests });
-      if (form.vibeTag) await api.put('/profile/vibe', { vibe: form.vibeTag });
-      updateUser({ bio: form.bio, city: form.city, interests: form.interests, vibe: form.vibeTag });
+      const { data } = await api.put('/users/profile', { bio: form.bio, location: { city: form.city }, interests: form.interests, vibeTag: form.vibeTag });
+      updateUser(data.user);
       setEditing(false);
       toast.success('Profile updated!');
     } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
     finally { setSaving(false); }
   };
 
-  const handleLogout = async () => { await logout(); navigate('/login'); };
+  const handleLogout = () => { logout(); navigate('/login'); };
   const safetyScore = user?.safetyScore ?? 100;
 
   const SETTINGS = [
-    { icon: Clock,       label: 'Availability',   sub: 'Set your schedule',       onClick: () => navigate('/setup-profile') },
-    { icon: Shield,      label: 'Safety Circle',  sub: 'Manage trusted contacts', onClick: () => {} },
-    { icon: Bell,        label: 'Notifications',  sub: 'Manage alerts',           onClick: () => {} },
-    { icon: Eye,         label: 'Privacy',        sub: 'Control your data',       onClick: () => {} },
-    { icon: HelpCircle,  label: 'Help & Support', sub: 'Get assistance',          onClick: () => {} },
+    { icon: Clock,       label: 'Availability',    sub: 'Set your schedule',        onClick: () => navigate('/setup-profile') },
+    { icon: Shield,      label: 'Safety Circle',   sub: 'Manage trusted contacts',  onClick: () => {} },
+    { icon: Bell,        label: 'Notifications',   sub: 'Manage alerts',            onClick: () => {} },
+    { icon: Eye,         label: 'Privacy',         sub: 'Control your data',        onClick: () => {} },
+    { icon: Activity,    label: 'System Status',   sub: 'Check all services live',  onClick: () => navigate('/status') },
+    { icon: HelpCircle,  label: 'Help & Support',  sub: 'Get assistance',           onClick: () => {} },
   ];
 
   const inputStyle = { width: '100%', background: '#2D2653', border: '1.5px solid #433B72', borderRadius: 12, padding: '10px 14px', color: '#F1F0F7', fontSize: 14, fontFamily: 'Inter, sans-serif', outline: 'none' };
@@ -74,10 +73,10 @@ export default function ProfilePage() {
         </div>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#F1F0F7', letterSpacing: '-0.02em' }}>{user?.name}</h2>
         <p style={{ fontSize: 14, color: '#6E6893', marginTop: 2 }}>{user?.email}</p>
-        {user?.city && (
+        {user?.location?.city && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
             <MapPin size={13} color="#6E6893" />
-            <span style={{ fontSize: 14, color: '#A8A3C7' }}>{user.city}</span>
+            <span style={{ fontSize: 14, color: '#A8A3C7' }}>{user.location.city}</span>
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' }}>

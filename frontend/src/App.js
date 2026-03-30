@@ -18,6 +18,8 @@ import ChatListPage     from './pages/ChatListPage';
 import ChatRoomPage     from './pages/ChatRoomPage';
 import EventsPage       from './pages/EventsPage';
 import ProfilePage      from './pages/ProfilePage';
+import StatusPage       from './pages/StatusPage';
+import MapPage          from './pages/MapPage';
 
 const pv = {
   initial: { opacity: 0, y: 12, scale: 0.98 },
@@ -39,7 +41,7 @@ function AnimatedRoutes() {
         <Route path="/login"         element={<PublicRoute><PW><LoginPage /></PW></PublicRoute>} />
         <Route path="/register"      element={<PublicRoute><PW><RegisterPage /></PW></PublicRoute>} />
 
-        {/* Semi-protected (token optional) */}
+        {/* Semi-protected */}
         <Route path="/verify-otp"    element={<PW><VerifyOtpPage /></PW>} />
         <Route path="/verify-id"     element={<ProtectedRoute><PW><VerifyIdPage /></PW></ProtectedRoute>} />
         <Route path="/setup-profile" element={<ProtectedRoute><PW><SetupProfilePage /></PW></ProtectedRoute>} />
@@ -48,9 +50,12 @@ function AnimatedRoutes() {
         <Route path="/dashboard"     element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/match"         element={<ProtectedRoute><MatchPage /></ProtectedRoute>} />
         <Route path="/chats"         element={<ProtectedRoute><ChatListPage /></ProtectedRoute>} />
+        <Route path="/chat/:roomId"  element={<ProtectedRoute><ChatRoomPage /></ProtectedRoute>} />
         <Route path="/chat/:chatId"  element={<ProtectedRoute><ChatRoomPage /></ProtectedRoute>} />
         <Route path="/events"        element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
         <Route path="/profile"       element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/status"        element={<ProtectedRoute><PW><StatusPage /></PW></ProtectedRoute>} />
+        <Route path="/map"           element={<ProtectedRoute><MapPage /></ProtectedRoute>} />
 
         {/* Redirects */}
         <Route path="/"              element={<Navigate to="/dashboard" replace />} />

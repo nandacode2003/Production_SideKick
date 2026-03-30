@@ -1,6 +1,7 @@
+const { ChatMessage } = require('../models/index');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const { Chat } = require('../models/index');
+
+const connectedUsers = new Map();
 
 const initSocket = (io) => {
   io.use((socket, next) => {
@@ -15,68 +16,35 @@ const initSocket = (io) => {
     }
   });
 
-  io.on('connection', async (socket) => {
-    const userId = socket.userId;
-    socket.join(userId);
+  io.on('connection', (socket) => {
+    console.log(`🔌 Socket connected: ${socket.userId}`);
+    connectedUsers.set(socket.userId, socket.id);
 
-    await User.findByIdAndUpdate(userId, { isOnline: true, lastActive: new Date() });
-    console.log(`🔌 Connected: ${userId}`);
+    socket.on('join_room', (roomId) => {
+      socket.join(roomId);
+      socket.currentRoom = roomId;
+    });
 
-    socket.on('send-message', async ({ chatId, text }) => {
+    socket.on('send_message', async ({ roomId, content }) => {
       try {
-        if (!text?.trim()) return;
-        const chat = await Chat.findOne({ _id: chatId, participants: userId });
-        if (!chat) return;
-
-        const message = { sender: userId, text: text.trim(), read: false, createdAt: new Date() };
-        chat.messages.push(message);
-        chat.lastMessage = { text: text.trim(), sender: userId, createdAt: new Date() };
-        await chat.save();
-
-        const saved = chat.messages[chat.messages.length - 1];
-        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
-
-        io.to(otherId).emit('new-message', { chatId, message: saved });
-        io.to(userId).emit('new-message', { chatId, message: saved });
-        io.to(otherId).emit('chat-updated', { chatId, lastMessage: chat.lastMessage });
+        const msg = await ChatMessage.create({ roomId, sender: socket.userId, content });
+        await msg.populate('sender', 'name profilePhoto');
+        io.to(roomId).emit('new_message', {
+          _id: msg._id, roomId, content,
+          sender: msg.sender, createdAt: msg.createdAt,
+        });
       } catch (err) {
         socket.emit('error', { message: 'Message failed' });
       }
     });
 
-    socket.on('typing', ({ chatId }) => {
-      Chat.findOne({ _id: chatId, participants: userId }).then(chat => {
-        if (!chat) return;
-        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
-        io.to(otherId).emit('user-typing', { chatId, userId });
-      });
+    socket.on('typing', ({ roomId, isTyping }) => {
+      socket.to(roomId).emit('user_typing', { userId: socket.userId, isTyping });
     });
 
-    socket.on('stop-typing', ({ chatId }) => {
-      Chat.findOne({ _id: chatId, participants: userId }).then(chat => {
-        if (!chat) return;
-        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
-        io.to(otherId).emit('user-stop-typing', { chatId, userId });
-      });
-    });
-
-    socket.on('mark-read', async ({ chatId }) => {
-      try {
-        const chat = await Chat.findOne({ _id: chatId, participants: userId });
-        if (!chat) return;
-        let updated = false;
-        chat.messages.forEach(m => {
-          if (!m.read && m.sender.toString() !== userId) { m.read = true; updated = true; }
-        });
-        if (updated) await chat.save();
-        const otherId = chat.participants.find(p => p.toString() !== userId)?.toString();
-        io.to(otherId).emit('messages-read', { chatId });
-      } catch {}
-    });
-
-    socket.on('disconnect', async () => {
-      await User.findByIdAndUpdate(userId, { isOnline: false, lastActive: new Date() });
-      console.log(`🔌 Disconnected: ${userId}`);
+    socket.on('disconnect', () => {
+      connectedUsers.delete(socket.userId);
+      console.log(`🔌 Disconnected: ${socket.userId}`);
     });
   });
 };

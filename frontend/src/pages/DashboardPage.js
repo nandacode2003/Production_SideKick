@@ -23,25 +23,17 @@ export default function DashboardPage() {
   useScrollAnimation(actionsRef, { from: { y: 40, opacity: 0 }, to: { y: 0, opacity: 1 }, stagger: 0.08 });
 
   useEffect(() => {
-    api.get('/dashboard/stats').then(r => {
-      setStats({ matches: r.data.activeMatches || 0, events: r.data.eventsJoined || 0 });
-    }).catch(() => {});
-    api.get('/matches/pending').then(r => setPending(r.data || [])).catch(() => {}).finally(() => setLoadingPending(false));
+    api.get('/matches/pending').then(r => setPending(r.data.pending || [])).catch(() => {}).finally(() => setLoadingPending(false));
+    api.get('/matches/active').then(r => setStats(s => ({ ...s, matches: r.data.matches?.length || 0 }))).catch(() => {});
     setTimeout(() => setHeroPlayed(true), 2200);
   }, []);
 
   const respond = async (matchId, action) => {
-    try {
-      await api.post(`/matches/${matchId}/${action}`);
-      setPending(p => p.filter(m => m._id !== matchId));
-      if (action === 'accept') {
-        setStats(s => ({ ...s, matches: s.matches + 1 }));
-        toast.success('Match accepted! 🎉');
-      } else {
-        toast.success('Request declined');
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Action failed');
+    await api.put('/matches/respond', { matchId, action });
+    setPending(p => p.filter(m => m._id !== matchId));
+    if (action === 'accept') {
+      setStats(s => ({ ...s, matches: s.matches + 1 }));
+      toast.success('Match accepted!');
     }
   };
 
@@ -75,10 +67,10 @@ export default function DashboardPage() {
             <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F1F0F7', letterSpacing: '-0.025em' }}>
               Hey, {firstName}
             </h1>
-            {user?.city && (
+            {user?.location?.city && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                 <MapPin size={13} color="#6E6893" />
-                <span style={{ fontSize: 13, color: '#6E6893' }}>{user.city}</span>
+                <span style={{ fontSize: 13, color: '#6E6893' }}>{user.location.city}</span>
               </div>
             )}
           </motion.div>
@@ -104,11 +96,11 @@ export default function DashboardPage() {
             {pending.map((match, i) => (
               <div key={match._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < pending.length - 1 ? '1px solid #2D2653' : 'none' }}>
                 <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #7C3AED, #2DD4BF)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: 'white', flexShrink: 0 }}>
-                  {match.users?.find(u => u._id !== match.initiator)?.name?.[0]}
+                  {match.requester.name?.[0]}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: '#F1F0F7' }}>{match.users?.find(u => u._id !== match.initiator)?.name}</p>
-                  <p style={{ fontSize: 12, color: '#6E6893', marginTop: 1 }}>{match.users?.find(u => u._id !== match.initiator)?.vibe || 'Wants to connect'}</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: '#F1F0F7' }}>{match.requester.name}</p>
+                  <p style={{ fontSize: 12, color: '#6E6893', marginTop: 1 }}>{match.requester.vibeTag || 'Wants to connect'}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => respond(match._id, 'reject')}

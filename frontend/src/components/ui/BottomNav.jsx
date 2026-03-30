@@ -2,14 +2,14 @@
 import React, { memo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Home, Sparkles, Calendar, MessageCircle, User } from 'lucide-react';
+import { Home, Sparkles, Calendar, MessageCircle, User, Map } from 'lucide-react';
 
 const NAV = [
   { to: '/dashboard', icon: Home,          label: 'Home'    },
   { to: '/match',     icon: Sparkles,       label: 'Match'   },
+  { to: '/map',       icon: Map,            label: 'Map',  center: true },
   { to: '/events',    icon: Calendar,       label: 'Events'  },
   { to: '/chats',     icon: MessageCircle,  label: 'Chats'   },
-  { to: '/profile',   icon: User,           label: 'Profile' },
 ];
 
 const BottomNav = memo(function BottomNav() {
@@ -25,9 +25,29 @@ const BottomNav = memo(function BottomNav() {
       display: 'flex', alignItems: 'center',
       maxWidth: 480, margin: '0 auto',
     }}>
-      {NAV.map(({ to, icon: Icon, label }) => (
+      {NAV.map(({ to, icon: Icon, label, center }) => (
         <NavLink key={to} to={to} style={{ flex: 1, textDecoration: 'none' }}>
-          {({ isActive }) => (
+          {({ isActive }) => center ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', paddingBottom: 6 }}>
+              <motion.div
+                whileTap={{ scale: 0.88 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                style={{
+                  width: 48, height: 48, borderRadius: 16,
+                  background: isActive
+                    ? 'linear-gradient(135deg, #7C3AED, #2DD4BF)'
+                    : 'linear-gradient(135deg, #2D2653, #1A1535)',
+                  border: isActive ? 'none' : '1.5px solid #433B72',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                  boxShadow: isActive ? '0 4px 20px rgba(124,58,237,0.5)' : '0 2px 8px rgba(0,0,0,0.4)',
+                  cursor: 'pointer', marginTop: -10,
+                }}
+              >
+                <Icon size={20} color={isActive ? 'white' : '#6E6893'} strokeWidth={isActive ? 2 : 1.5} />
+                <span style={{ fontSize: 9, fontWeight: 600, color: isActive ? 'white' : '#6E6893', letterSpacing: '0.02em' }}>Map</span>
+              </motion.div>
+            </div>
+          ) : (
             <motion.div
               whileTap={{ scale: 0.88 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}

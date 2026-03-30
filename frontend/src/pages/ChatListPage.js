@@ -24,7 +24,7 @@ function ChatRow({ room, index, total, formatTime, onClick }) {
           <span style={{ fontSize: 12, color: '#6E6893', flexShrink: 0, marginLeft: 8 }}>{formatTime(room.lastMessage?.createdAt)}</span>
         </div>
         <p style={{ fontSize: 13, color: '#6E6893', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {room.lastMessage?.text || 'Start the conversation!'}
+          {room.lastMessage?.content || 'Start the conversation!'}
         </p>
       </div>
     </motion.div>
@@ -39,7 +39,7 @@ export default function ChatListPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get('/chats').then(r => setRooms(r.data || [])).catch(() => {}).finally(() => setLoading(false));
+    api.get('/chats/rooms').then(r => setRooms(r.data.rooms || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const filtered = rooms.filter(r => r.other?.name?.toLowerCase().includes(search.toLowerCase()));
@@ -75,7 +75,7 @@ export default function ChatListPage() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
           style={{ background: '#1A1535', borderRadius: 20, border: '1px solid #2D2653', boxShadow: '0 4px 16px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
           {filtered.map((room, i) => (
-            <ChatRow key={room.chatId} room={room} index={i} total={filtered.length} formatTime={formatTime} onClick={() => navigate(`/chat/${room.chatId}`)} />
+            <ChatRow key={room.roomId} room={room} index={i} total={filtered.length} formatTime={formatTime} onClick={() => navigate(`/chat/${room.roomId}`)} />
           ))}
         </motion.div>
       )}

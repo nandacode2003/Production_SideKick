@@ -44,10 +44,10 @@ function MatchCard({ user, totalScore, interestScore, availabilityScore, distanc
             </div>
             <span style={{ fontSize: 14, fontWeight: 700, color: matchColor }}>{Math.round(totalScore)}%</span>
           </div>
-          {user.city && (
+          {user.location?.city && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 3 }}>
               <MapPin size={12} color="#6E6893" />
-              <span style={{ fontSize: 13, color: '#6E6893' }}>{user.city}</span>
+              <span style={{ fontSize: 13, color: '#6E6893' }}>{user.location.city}</span>
             </div>
           )}
           {user.interests?.length > 0 && (
@@ -86,16 +86,16 @@ export default function MatchPage() {
 
   useEffect(() => {
     api.get('/matches/suggestions')
-      .then(r => setSuggestions(r.data || []))
+      .then(r => setSuggestions(r.data.matches || []))
       .catch(err => setError(err.response?.data?.message || 'Could not load matches.'))
       .finally(() => setLoading(false));
   }, []);
 
   const sendRequest = async (userId) => {
     try {
-      await api.post('/matches/request', { targetUserId: userId });
+      await api.post('/matches/request', { receiverId: userId });
       setSent(s => new Set([...s, userId]));
-      toast.success('Request sent! 🎉');
+      toast.success('Request sent!');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send request');
     }
@@ -131,9 +131,9 @@ export default function MatchPage() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {suggestions.map(({ user, compatibilityScore, matchedInterests }, i) => (
-          <MatchCard key={user._id} user={user} totalScore={compatibilityScore} interestScore={compatibilityScore}
-            availabilityScore={compatibilityScore * 0.6} distanceScore={80}
+        {suggestions.map(({ user, totalScore, interestScore, availabilityScore, distanceScore }, i) => (
+          <MatchCard key={user._id} user={user} totalScore={totalScore} interestScore={interestScore}
+            availabilityScore={availabilityScore} distanceScore={distanceScore}
             sent={sent.has(user._id)} onSend={() => sendRequest(user._id)} delay={i * 0.07} />
         ))}
       </div>

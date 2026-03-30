@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail } from 'lucide-react';
+import { Smartphone, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import AuroraBackground from '../components/ui/AuroraBackground';
@@ -12,19 +12,14 @@ import api from '../utils/api';
 
 export default function VerifyOtpPage() {
   const { login } = useAuth();
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
   const { state } = useLocation();
-  const userId    = state?.userId || '';
-  const email     = state?.email  || '';
+  const phone = state?.phone || '';
 
-  const [otp, setOtp]           = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [otp, setOtp] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
-
-  useEffect(() => {
-    if (!userId) { navigate('/register'); return; }
-  }, [userId, navigate]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -36,9 +31,9 @@ export default function VerifyOtpPage() {
     if (otp.length !== 6) return setError('Enter all 6 digits');
     setLoading(true); setError('');
     try {
-      const { data } = await api.post('/auth/verify-otp', { userId, otp });
-      login(data.token, data.refreshToken, data.user);
-      toast.success('Email verified! 🎉');
+      const { data } = await api.post('/auth/verify-otp', { phone, otp });
+      login(data.accessToken || data.token, data.refreshToken, data.user);
+      toast.success('Phone verified!');
       navigate('/verify-id');
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid OTP');
@@ -47,13 +42,9 @@ export default function VerifyOtpPage() {
   };
 
   const resend = async () => {
-    try {
-      await api.post('/auth/resend-otp', { userId });
-      setCountdown(60); setError(''); setOtp('');
-      toast.success('OTP resent to your email!');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to resend OTP');
-    }
+    await api.post('/auth/resend-otp', { phone });
+    setCountdown(60); setError(''); setOtp('');
+    toast.success('OTP resent!');
   };
 
   return (
@@ -63,11 +54,11 @@ export default function VerifyOtpPage() {
         <ProgressBar currentStep={1} totalSteps={5} />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
           <OnboardingCard>
-            <StepIcon icon={Mail} />
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F1F0F7', textAlign: 'center', letterSpacing: '-0.02em' }}>Verify your email</h2>
+            <StepIcon icon={Smartphone} />
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#F1F0F7', textAlign: 'center', letterSpacing: '-0.02em' }}>Verify your phone</h2>
             <p style={{ fontSize: 14, color: '#A8A3C7', textAlign: 'center', marginTop: 6 }}>
               Enter the 6-digit code sent to{' '}
-              <span style={{ color: '#F1F0F7', fontWeight: 600 }}>{email}</span>
+              <span style={{ color: '#F1F0F7', fontWeight: 600 }}>{phone}</span>
             </p>
 
             <OTPInput length={6} value={otp} onChange={setOtp} error={error} />
@@ -86,6 +77,11 @@ export default function VerifyOtpPage() {
               ) : (
                 <button onClick={resend} style={{ background: 'none', border: 'none', color: '#2DD4BF', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Resend</button>
               )}
+            </div>
+
+            <div style={{ marginTop: 16, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Info size={16} color="#FBBF24" />
+              <span style={{ fontSize: 13, color: '#FBBF24' }}>Check server console for OTP</span>
             </div>
           </OnboardingCard>
         </div>

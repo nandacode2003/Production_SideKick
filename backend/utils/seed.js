@@ -17,9 +17,15 @@ const BASE_LAT = 20.2961;
 const BASE_LNG = 85.8245;
 
 async function seed() {
-  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sidekick';
+  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/sidekick';
   await mongoose.connect(uri);
   console.log('✅ Connected to MongoDB');
+
+  // Drop conflicting indexes that don't belong to this schema
+  try {
+    await mongoose.connection.collection('users').dropIndex('rollnumber_1');
+    console.log('🗑️  Dropped conflicting rollnumber_1 index');
+  } catch (e) { /* index may not exist, ignore */ }
 
   await User.deleteMany({ email: /@sidekick-seed\.com$/ });
   console.log('🗑️  Cleared old seed users');

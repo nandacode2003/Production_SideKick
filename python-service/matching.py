@@ -9,7 +9,6 @@ All scores normalized to 0–100.
 import math
 
 # ── INTEREST SCORE ────────────────────────────────────────
-# Jaccard similarity: |A ∩ B| / |A ∪ B|  → 0 to 100
 def interest_score(user_interests, candidate_interests):
     a = set(user_interests or [])
     b = set(candidate_interests or [])
@@ -20,7 +19,6 @@ def interest_score(user_interests, candidate_interests):
     return round((intersection / union) * 100, 2)
 
 # ── AVAILABILITY SCORE ────────────────────────────────────
-# Count overlapping (day, slot) pairs → normalize by user's total slots
 def availability_score(user_avail, cand_avail):
     def flatten(avail):
         slots = set()
@@ -32,12 +30,11 @@ def availability_score(user_avail, cand_avail):
     u = flatten(user_avail)
     c = flatten(cand_avail)
     if not u:
-        return 50  # unknown = neutral
+        return 50
     overlap = len(u & c)
     return round(min((overlap / len(u)) * 100, 100), 2)
 
 # ── DISTANCE SCORE ────────────────────────────────────────
-# Haversine formula → convert km to 0–100 score
 def haversine_km(lat1, lng1, lat2, lng2):
     if None in (lat1, lng1, lat2, lng2):
         return None
@@ -51,29 +48,17 @@ def haversine_km(lat1, lng1, lat2, lng2):
 def distance_score(lat1, lng1, lat2, lng2, max_km=30):
     km = haversine_km(lat1, lng1, lat2, lng2)
     if km is None:
-        return 50  # unknown = neutral
+        return 50
     if km >= max_km:
         return 0
     return round((1 - km / max_km) * 100, 2)
 
 # ── SAFETY SCORE ──────────────────────────────────────────
-# Normalize user's safetyScore (0–100) directly
 def safety_score(candidate_safety_score):
     return min(max(candidate_safety_score or 100, 0), 100)
 
 # ── MAIN COMPUTE ──────────────────────────────────────────
 def compute_matches(user, candidates):
-    """
-    Pseudo-code:
-    FOR each candidate:
-        i_score = jaccard(user.interests, candidate.interests) * 100
-        a_score = overlap(user.availability, candidate.availability) * 100
-        d_score = (1 - distance_km / max_km) * 100
-        s_score = candidate.safetyScore
-        total = 0.35*i + 0.25*a + 0.25*d + 0.15*s
-    SORT by total DESC
-    RETURN top 20
-    """
     results = []
     for c in candidates:
         i = interest_score(user.get('interests'), c.get('interests'))

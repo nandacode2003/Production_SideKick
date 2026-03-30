@@ -42,7 +42,7 @@ export default function LoginPage() {
         x: '110vw',
         transition: { duration: 0.8, ease: [0.4, 0, 1, 1] },
       });
-      login(data.token, data.refreshToken, data.user);
+      login(data.accessToken || data.token, data.refreshToken, data.user);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Check your credentials.');

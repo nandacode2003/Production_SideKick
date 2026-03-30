@@ -42,10 +42,8 @@ export default function SetupProfilePage() {
   const save = async () => {
     setLoading(true);
     try {
-      await api.put('/profile/update', { name: form.name, bio: form.bio, city: form.city });
-      if (form.vibeTag) await api.put('/profile/vibe', { vibe: form.vibeTag });
-      if (form.interests.length >= 3) await api.put('/profile/interests', { interests: form.interests });
-      updateUser({ bio: form.bio, city: form.city, vibe: form.vibeTag, interests: form.interests });
+      const { data } = await api.put('/users/profile', { ...form, location: { city: form.city } });
+      updateUser(data.user);
       toast.success('Profile saved!');
       navigate('/dashboard');
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to save'); }

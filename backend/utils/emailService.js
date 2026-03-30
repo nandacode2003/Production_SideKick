@@ -1,14 +1,18 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 465,
-  secure: true,
-  auth: { user: process.env.BREVO_USER, pass: process.env.BREVO_PASS },
-});
-
-const send = (to, subject, html) =>
-  transporter.sendMail({ from: `"SideKick" <${process.env.EMAIL_USER}>`, to, subject, html });
+const send = async (to, subject, html) => {
+  await axios.post('https://api.brevo.com/v3/smtp/email', {
+    sender: { name: 'SideKick', email: process.env.EMAIL_USER },
+    to: [{ email: to }],
+    subject,
+    htmlContent: html,
+  }, {
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+    },
+  });
+};
 
 const wrap = (body) => `
 <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">
@@ -59,7 +63,6 @@ exports.sendSafetyCircleEmail = (contactEmail, userName, eventTitle, eventLocati
     <h2 style="color:#7c3aed">Safety Check-in Alert</h2>
     <p style="color:#374151"><strong>${userName}</strong> is attending <strong>${eventTitle}</strong>.</p>
     <p style="color:#6b7280">📍 Location: ${eventLocation}</p>
-    <p style="color:#374151">They will confirm they're safe after the event. If you don't hear from them, you'll be notified.</p>
     <a href="${checkInLink}" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold">View Check-in</a>`));
 
 exports.sendSafetyAlertEmail = (contactEmail, userName) =>
